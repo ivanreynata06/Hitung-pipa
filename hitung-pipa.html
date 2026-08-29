@@ -331,7 +331,7 @@
         <p class="sub" style="margin:-6px 0 0;" id="toolHint">Mode Tandai aktif — tap pipa buat tambah/hapus titik manual.</p>
 
         <div class="card adv-panel" id="advPanel">
-          <div class="slider-row"><label><span>Sensitivitas deteksi (makin kanan makin longgar)</span><span id="valSens">55</span></label><input type="range" id="sensSlider" min="10" max="90" value="55"></div>
+          <div class="slider-row"><label><span>Sensitivitas deteksi (makin kanan makin longgar)</span><span id="valSens">62</span></label><input type="range" id="sensSlider" min="10" max="90" value="62"></div>
           <div class="slider-row"><label><span>Radius min (px)</span><span id="valMin">14</span></label><input type="range" id="minSlider" min="5" max="80" value="14"></div>
           <div class="slider-row"><label><span>Radius maks (px)</span><span id="valMax">60</span></label><input type="range" id="maxSlider" min="15" max="140" value="60"></div>
           <div class="slider-row"><label><span>Ukuran kuas arsir</span><span id="valBrush">22</span></label><input type="range" id="brushSlider" min="8" max="60" value="22"></div>
@@ -586,12 +586,24 @@ function loadImageToCanvas(src){
 function redrawOverlay(){
   octx.clearRect(0,0,overlayCanvas.width, overlayCanvas.height);
   state.markers.forEach((m,i)=>{
+    // halo gelap dulu biar kontras di background apapun
     octx.beginPath();
     octx.arc(m.x, m.y, m.r, 0, Math.PI*2);
-    octx.strokeStyle = '#22b24c';
-    octx.lineWidth = 2;
+    octx.strokeStyle = 'rgba(10,8,14,0.75)';
+    octx.lineWidth = 5.5;
     octx.stroke();
-    octx.fillStyle = 'rgba(34,178,76,0.18)';
+    // cincin magenta tebal — sengaja beda jauh dari hijau pipa
+    octx.beginPath();
+    octx.arc(m.x, m.y, m.r, 0, Math.PI*2);
+    octx.strokeStyle = '#ff2fa0';
+    octx.lineWidth = 3.2;
+    octx.stroke();
+    octx.fillStyle = 'rgba(255,47,160,0.20)';
+    octx.fill();
+    // titik pusat biar makin jelas posisi tap
+    octx.beginPath();
+    octx.arc(m.x, m.y, 2.6, 0, Math.PI*2);
+    octx.fillStyle = '#ff2fa0';
     octx.fill();
   });
 }
@@ -706,6 +718,7 @@ function finalizeBoxDetect(){
     state.markers = markersOutsideRect(x0,y0,w,h);
     const found = detectCirclesInRect(x0,y0,w,h);
     state.markers.push(...found);
+    dedupeMarkers();
     clearFocusSpotlight();
     redrawOverlay();
     updatePipeCount();
@@ -729,6 +742,7 @@ function finalizeShadeDetect(){
     const found = detectCirclesInRect(x0,y0,w,h).filter(c => isShaded(c.x, c.y));
     state.markers = state.markers.filter(m => !isShaded(m.x, m.y));
     state.markers.push(...found);
+    dedupeMarkers();
     clearFocusSpotlight();
     redrawOverlay();
     updatePipeCount();
@@ -767,6 +781,24 @@ $('applyDetectBtn').onclick = () => runAutoDetect();
 
 function cvReady(){ return !!(window.cv && cv.Mat); }
 
+function mergeCircles(base, extra, minSepFactor=0.55){
+  const merged = base.slice();
+  extra.forEach(c=>{
+    const dup = merged.find(m => Math.hypot(m.x-c.x, m.y-c.y) < Math.max(m.r,c.r)*minSepFactor);
+    if(!dup) merged.push(c);
+  });
+  return merged;
+}
+
+function dedupeMarkers(){
+  const kept = [];
+  state.markers.forEach(m=>{
+    const dup = kept.find(k => Math.hypot(k.x-m.x, k.y-m.y) < Math.max(m.r,k.r)*0.55);
+    if(!dup) kept.push(m);
+  });
+  state.markers = kept;
+}
+
 function detectCirclesInRect(x0,y0,w,h){
   if(!cvReady()) return [];
   x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0));
@@ -777,10 +809,10 @@ function detectCirclesInRect(x0,y0,w,h){
   const minR = parseInt($('minSlider').value);
   const maxR = parseInt($('maxSlider').value);
   const sens = parseInt($('sensSlider').value); // makin besar = makin longgar (makin banyak kedeteksi)
-  const circMin = Math.max(0.28, 0.86 - (sens/100)*0.55);
+  const circMin = Math.max(0.24, 0.82 - (sens/100)*0.55);
   const blockSize = Math.min(71, Math.max(15, (2*Math.round(minR*1.4))+1));
 
-  let src,roi,gray,thresh,kernel,contours,hierarchy,clahe;
+  let src,roi,gray,thresh,kernel,contours,hierarchy,clahe,houghMat;
   try{
     src = cv.imread(baseCanvas);
     roi = src.roi(new cv.Rect(x0,y0,w,h));
@@ -792,7 +824,7 @@ function detectCirclesInRect(x0,y0,w,h){
     clahe = new cv.CLAHE(2.5, new cv.Size(8,8));
     clahe.apply(gray, gray);
 
-    // segmentasi: lubang pipa (gelap) jadi area putih, dinding pipa (terang) jadi latar
+    // METODE 1: segmentasi lubang gelap tiap pipa jadi blob, difilter bentuk bundar
     thresh = new cv.Mat();
     cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, blockSize, 4);
     kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3,3));
@@ -802,8 +834,8 @@ function detectCirclesInRect(x0,y0,w,h){
     hierarchy = new cv.Mat();
     cv.findContours(thresh, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
-    const results = [];
-    const minArea = Math.PI * minR * minR * 0.35;
+    let results = [];
+    const minArea = Math.PI * minR * minR * 0.3;
     for(let i=0; i<contours.size(); i++){
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
@@ -818,12 +850,31 @@ function detectCirclesInRect(x0,y0,w,h){
       }
       cnt.delete();
     }
+
+    // METODE 2: Hough Circle di gray yang sama — nangkep pipa yang lubangnya kurang
+    // kontras / kepotong sebagian sehingga lolos dari metode 1
+    try{
+      houghMat = new cv.Mat();
+      const minDist = Math.max(6, minR * 1.3);
+      const houghParam2 = Math.max(9, 32 - Math.round(sens/4));
+      cv.HoughCircles(gray, houghMat, cv.HOUGH_GRADIENT, 1, minDist, 90, houghParam2, minR, maxR);
+      const houghResults = [];
+      for(let i=0; i<houghMat.cols; i++){
+        houghResults.push({
+          x: houghMat.data32F[i*3] + x0,
+          y: houghMat.data32F[i*3+1] + y0,
+          r: houghMat.data32F[i*3+2]
+        });
+      }
+      results = mergeCircles(results, houghResults);
+    }catch(e2){ console.error('hough pass', e2); }
+
     return results;
   }catch(err){
     console.error(err);
     return [];
   }finally{
-    [src,roi,gray,thresh,kernel,contours,hierarchy,clahe].forEach(m=>{ try{ m && m.delete && m.delete(); }catch(e){} });
+    [src,roi,gray,thresh,kernel,contours,hierarchy,clahe,houghMat].forEach(m=>{ try{ m && m.delete && m.delete(); }catch(e){} });
   }
 }
 
