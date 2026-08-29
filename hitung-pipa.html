@@ -270,7 +270,7 @@
     <!-- SCREEN 3: HITUNG PIPA -->
     <section class="screen" id="screen-3">
       <h2 class="title">Hitung pipa</h2>
-      <p class="sub">Foto tumpukan pipa, lalu deteksi otomatis. Koreksi manual: tap = tandai/hapus titik, arsir = tandai area yang sudah dicek.</p>
+      <p class="sub"><b>Kotak</b> = tarik kotak di area pipa, otomatis kehitung. <b>Arsir</b> = usap area pipa, otomatis kehitung. <b>Tandai</b> = tap pipa yang belum kehitung buat tambah manual, tap lagi buat hapus.</p>
 
       <div id="pipeCaptureStage">
         <div class="capture-box" id="pipeCaptureBox">
@@ -287,6 +287,7 @@
       <div id="pipeCountStage" style="display:none; flex-direction:column; gap:14px;">
         <div class="canvas-wrap" id="canvasWrap">
           <canvas id="baseCanvas"></canvas>
+          <canvas id="shadeCanvas" class="overlay"></canvas>
           <canvas id="overlayCanvas" class="overlay"></canvas>
         </div>
 
@@ -303,26 +304,27 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
             Tandai
           </div>
+          <div class="tbtn" id="tool-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            Kotak
+          </div>
           <div class="tbtn" id="tool-shade">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6M9 11l7-7 4 4-7 7M9 11l4 4M5 21l-2-2 3-3 2 2z"/></svg>
             Arsir
-          </div>
-          <div class="tbtn" id="tool-auto">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2 2M16.4 16.4l2 2M5.6 18.4l2-2M16.4 7.6l2-2"/><circle cx="12" cy="12" r="3.5"/></svg>
-            Deteksi
           </div>
           <div class="tbtn" id="tool-adv">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             Atur
           </div>
         </div>
+        <p class="sub" style="margin:-6px 0 0;" id="toolHint">Mode Tandai aktif — tap pipa buat tambah/hapus titik manual.</p>
 
         <div class="card adv-panel" id="advPanel">
           <div class="slider-row"><label><span>Sensitivitas deteksi</span><span id="valSens">30</span></label><input type="range" id="sensSlider" min="12" max="60" value="30"></div>
           <div class="slider-row"><label><span>Radius min (px)</span><span id="valMin">8</span></label><input type="range" id="minSlider" min="3" max="60" value="8"></div>
           <div class="slider-row"><label><span>Radius maks (px)</span><span id="valMax">40</span></label><input type="range" id="maxSlider" min="10" max="120" value="40"></div>
           <div class="slider-row"><label><span>Ukuran kuas arsir</span><span id="valBrush">22</span></label><input type="range" id="brushSlider" min="8" max="60" value="22"></div>
-          <button class="tbtn" id="applyDetectBtn" style="flex:none;">Jalankan ulang deteksi</button>
+          <button class="tbtn" id="applyDetectBtn" style="flex:none;">⚡ Scan seluruh foto sekaligus</button>
         </div>
 
         <div style="display:flex; gap:8px;">
@@ -531,7 +533,7 @@ $('retakePipeBtn').onclick = () => {
   $('pipePhotoInput').click();
 };
 
-let baseCanvas, overlayCanvas, bctx, octx, scaleRatio=1;
+let baseCanvas, overlayCanvas, shadeCanvas, bctx, octx, sctx, scaleRatio=1;
 
 function loadImageToCanvas(src){
   const img = new Image();
@@ -543,13 +545,15 @@ function loadImageToCanvas(src){
     const h = Math.round(img.naturalHeight * (w/img.naturalWidth));
     scaleRatio = w / img.naturalWidth;
 
-    baseCanvas = $('baseCanvas'); overlayCanvas = $('overlayCanvas');
+    baseCanvas = $('baseCanvas'); overlayCanvas = $('overlayCanvas'); shadeCanvas = $('shadeCanvas');
     baseCanvas.width = w; baseCanvas.height = h;
     overlayCanvas.width = w; overlayCanvas.height = h;
-    bctx = baseCanvas.getContext('2d'); octx = overlayCanvas.getContext('2d');
+    shadeCanvas.width = w; shadeCanvas.height = h;
+    bctx = baseCanvas.getContext('2d'); octx = overlayCanvas.getContext('2d'); sctx = shadeCanvas.getContext('2d', {willReadFrequently:true});
     bctx.drawImage(img, 0, 0, w, h);
 
     state.markers = [];
+    sctx.clearRect(0,0,w,h);
     redrawOverlay();
     updatePipeCount();
   };
@@ -567,6 +571,20 @@ function redrawOverlay(){
     octx.fillStyle = 'rgba(34,178,76,0.18)';
     octx.fill();
   });
+  if(boxStart && boxCurrent) drawTempBox();
+}
+
+function drawTempBox(){
+  const x0=Math.min(boxStart.x,boxCurrent.x), y0=Math.min(boxStart.y,boxCurrent.y);
+  const w=Math.abs(boxCurrent.x-boxStart.x), h=Math.abs(boxCurrent.y-boxStart.y);
+  octx.save();
+  octx.strokeStyle = '#f2b705';
+  octx.lineWidth = 2;
+  octx.setLineDash([7,5]);
+  octx.strokeRect(x0,y0,w,h);
+  octx.fillStyle = 'rgba(242,183,5,0.10)';
+  octx.fillRect(x0,y0,w,h);
+  octx.restore();
 }
 
 function updatePipeCount(){
@@ -574,8 +592,11 @@ function updatePipeCount(){
   updateNextButton();
 }
 
-/* --- interaction: mark / shade --- */
+/* --- interaction: mark / kotak / arsir --- */
 let isDrawing = false;
+let boxStart = null, boxCurrent = null;
+let shadeStroke = null;
+
 function canvasPos(evt){
   const rect = overlayCanvas.getBoundingClientRect();
   const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
@@ -590,61 +611,162 @@ function handlePointerDown(evt){
   evt.preventDefault();
   const p = canvasPos(evt);
   if(state.tool === 'mark'){
-    // check if tapping existing marker -> remove it
     const hitIndex = state.markers.findIndex(m => Math.hypot(m.x-p.x, m.y-p.y) < Math.max(m.r, 14));
-    if(hitIndex >= 0){
-      state.markers.splice(hitIndex,1);
-    } else {
-      const defaultR = parseInt($('minSlider').value) + 6;
-      state.markers.push({x:p.x, y:p.y, r:defaultR});
-    }
+    if(hitIndex >= 0) state.markers.splice(hitIndex,1);
+    else state.markers.push({x:p.x, y:p.y, r: parseInt($('minSlider').value) + 6});
     redrawOverlay();
     updatePipeCount();
+  } else if(state.tool === 'box'){
+    boxStart = p; boxCurrent = p;
+    redrawOverlay();
   } else if(state.tool === 'shade'){
     isDrawing = true;
+    shadeStroke = {minX:p.x, minY:p.y, maxX:p.x, maxY:p.y};
     drawShade(p);
   }
 }
+
 function handlePointerMove(evt){
-  if(state.tool==='shade' && isDrawing){
+  if(state.tool === 'box' && boxStart){
     evt.preventDefault();
-    drawShade(canvasPos(evt));
+    boxCurrent = canvasPos(evt);
+    redrawOverlay();
+  } else if(state.tool === 'shade' && isDrawing){
+    evt.preventDefault();
+    const p = canvasPos(evt);
+    drawShade(p);
+    const b = parseInt($('brushSlider').value);
+    shadeStroke.minX = Math.min(shadeStroke.minX, p.x - b);
+    shadeStroke.minY = Math.min(shadeStroke.minY, p.y - b);
+    shadeStroke.maxX = Math.max(shadeStroke.maxX, p.x + b);
+    shadeStroke.maxY = Math.max(shadeStroke.maxY, p.y + b);
   }
 }
-function handlePointerUp(){ isDrawing = false; }
+
+function handlePointerUp(){
+  isDrawing = false;
+  if(state.tool === 'box' && boxStart && boxCurrent){
+    finalizeBoxDetect();
+  } else if(state.tool === 'shade' && shadeStroke){
+    finalizeShadeDetect();
+  }
+}
 
 function drawShade(p){
   const brush = parseInt($('brushSlider').value);
-  octx.beginPath();
-  octx.arc(p.x, p.y, brush, 0, Math.PI*2);
-  octx.fillStyle = 'rgba(242,183,5,0.28)';
-  octx.fill();
+  sctx.beginPath();
+  sctx.arc(p.x, p.y, brush, 0, Math.PI*2);
+  sctx.fillStyle = 'rgba(242,183,5,0.32)';
+  sctx.fill();
 }
 
-overlayCanvas && null;
+function markersOutsideRect(x0,y0,w,h){
+  return state.markers.filter(m => !(m.x>=x0 && m.x<=x0+w && m.y>=y0 && m.y<=y0+h));
+}
+
+function finalizeBoxDetect(){
+  const x0=Math.min(boxStart.x,boxCurrent.x), y0=Math.min(boxStart.y,boxCurrent.y);
+  const w=Math.abs(boxCurrent.x-boxStart.x), h=Math.abs(boxCurrent.y-boxStart.y);
+  boxStart = null; boxCurrent = null;
+  if(w<12 || h<12){ redrawOverlay(); return; }
+  toast('Menghitung area kotak…');
+  const runDetect = () => {
+    state.markers = markersOutsideRect(x0,y0,w,h);
+    const found = detectCirclesInRect(x0,y0,w,h);
+    state.markers.push(...found);
+    redrawOverlay();
+    updatePipeCount();
+    toast(found.length ? `+${found.length} pipa terdeteksi otomatis` : 'Tidak ada pipa terdeteksi, coba tandai manual');
+  };
+  if(cvReady()) runDetect(); else setTimeout(()=>{ cvReady() ? runDetect() : toast('Modul deteksi belum siap, coba lagi.'); }, 900);
+}
+
+function finalizeShadeDetect(){
+  const s = shadeStroke; shadeStroke = null;
+  const x0=Math.max(0,s.minX), y0=Math.max(0,s.minY);
+  const w=Math.min(shadeCanvas.width,s.maxX)-x0, h=Math.min(shadeCanvas.height,s.maxY)-y0;
+  if(w<6 || h<6) return;
+  toast('Menghitung area arsiran…');
+  const runDetect = () => {
+    const isShaded = (x,y) => {
+      const px = Math.min(shadeCanvas.width-1, Math.max(0, Math.round(x)));
+      const py = Math.min(shadeCanvas.height-1, Math.max(0, Math.round(y)));
+      return sctx.getImageData(px, py, 1, 1).data[3] > 10;
+    };
+    const found = detectCirclesInRect(x0,y0,w,h).filter(c => isShaded(c.x, c.y));
+    state.markers = state.markers.filter(m => !isShaded(m.x, m.y));
+    state.markers.push(...found);
+    redrawOverlay();
+    updatePipeCount();
+    toast(found.length ? `+${found.length} pipa terdeteksi otomatis` : 'Tidak ada pipa terdeteksi, coba tandai manual');
+  };
+  if(cvReady()) runDetect(); else setTimeout(()=>{ cvReady() ? runDetect() : toast('Modul deteksi belum siap, coba lagi.'); }, 900);
+}
+
 ['mousedown','touchstart'].forEach(ev=> document.addEventListener(ev, (e)=>{
   if(e.target.id==='overlayCanvas') handlePointerDown(e);
 }, {passive:false}));
 ['mousemove','touchmove'].forEach(ev=> document.addEventListener(ev, (e)=>{
-  if(e.target.id==='overlayCanvas' || isDrawing) handlePointerMove(e);
+  if(e.target.id==='overlayCanvas' || isDrawing || boxStart) handlePointerMove(e);
 }, {passive:false}));
 ['mouseup','touchend'].forEach(ev=> document.addEventListener(ev, handlePointerUp));
 
 /* --- toolbar --- */
+const toolHints = {
+  mark: 'Mode Tandai aktif — tap pipa buat tambah/hapus titik manual.',
+  box: 'Mode Kotak aktif — tarik kotak di sekitar pipa, langsung kehitung otomatis.',
+  shade: 'Mode Arsir aktif — usap area pipa, langsung kehitung otomatis.'
+};
 function setTool(name){
   state.tool = name;
-  document.querySelectorAll('#tool-mark,#tool-shade').forEach(el=>el.classList.remove('active'));
-  if(name==='mark') $('tool-mark').classList.add('active');
-  if(name==='shade') $('tool-shade').classList.add('active');
+  document.querySelectorAll('#tool-mark,#tool-box,#tool-shade').forEach(el=>el.classList.remove('active'));
+  $('tool-'+name).classList.add('active');
+  $('toolHint').textContent = toolHints[name];
 }
 $('tool-mark').onclick = () => setTool('mark');
+$('tool-box').onclick = () => { setTool('box'); $('advPanel').classList.remove('show'); };
 $('tool-shade').onclick = () => { setTool('shade'); $('advPanel').classList.remove('show'); };
 $('tool-adv').onclick = () => $('advPanel').classList.toggle('show');
-$('tool-auto').onclick = () => runAutoDetect();
 $('applyDetectBtn').onclick = () => runAutoDetect();
 
+function cvReady(){ return !!(window.cv && cv.Mat); }
+
+function detectCirclesInRect(x0,y0,w,h){
+  if(!cvReady()) return [];
+  x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0));
+  w = Math.min(baseCanvas.width - x0, Math.round(w));
+  h = Math.min(baseCanvas.height - y0, Math.round(h));
+  if(w < 6 || h < 6) return [];
+  try{
+    const src = cv.imread(baseCanvas);
+    const roi = src.roi(new cv.Rect(x0,y0,w,h));
+    const gray = new cv.Mat();
+    cv.cvtColor(roi, gray, cv.COLOR_RGBA2GRAY);
+    cv.medianBlur(gray, gray, 5);
+    const circles = new cv.Mat();
+    const minR = parseInt($('minSlider').value);
+    const maxR = parseInt($('maxSlider').value);
+    const sens = parseInt($('sensSlider').value);
+    const minDist = Math.max(6, minR * 1.2);
+    cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, minDist, 100, sens, minR, maxR);
+    const result = [];
+    for(let i=0; i<circles.cols; i++){
+      result.push({
+        x: circles.data32F[i*3] + x0,
+        y: circles.data32F[i*3+1] + y0,
+        r: circles.data32F[i*3+2]
+      });
+    }
+    src.delete(); roi.delete(); gray.delete(); circles.delete();
+    return result;
+  }catch(err){
+    console.error(err);
+    return [];
+  }
+}
+
 $('undoBtn').onclick = () => { state.markers.pop(); redrawOverlay(); updatePipeCount(); };
-$('resetBtn').onclick = () => { state.markers = []; redrawOverlay(); updatePipeCount(); };
+$('resetBtn').onclick = () => { state.markers = []; sctx.clearRect(0,0,shadeCanvas.width, shadeCanvas.height); redrawOverlay(); updatePipeCount(); };
 
 ['sensSlider','minSlider','maxSlider','brushSlider'].forEach(id=>{
   $(id).addEventListener('input', (e)=>{
@@ -653,41 +775,19 @@ $('resetBtn').onclick = () => { state.markers = []; redrawOverlay(); updatePipeC
   });
 });
 
-/* --- OpenCV auto detect --- */
+/* --- OpenCV auto detect: scan seluruh foto sekaligus --- */
 function runAutoDetect(){
-  if(!(window.cv && cv.Mat)){
+  if(!cvReady()){
     toast('Modul deteksi masih dimuat, tunggu sebentar…');
     setTimeout(runAutoDetect, 800);
     return;
   }
-  toast('Mendeteksi pipa…');
-  try{
-    const src = cv.imread(baseCanvas);
-    const gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.medianBlur(gray, gray, 5);
-    const circles = new cv.Mat();
-    const minR = parseInt($('minSlider').value);
-    const maxR = parseInt($('maxSlider').value);
-    const sens = parseInt($('sensSlider').value);
-    const minDist = Math.max(6, minR * 1.2);
-    cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, minDist, 100, sens, minR, maxR);
-
-    state.markers = [];
-    for(let i=0; i<circles.cols; i++){
-      const x = circles.data32F[i*3];
-      const y = circles.data32F[i*3+1];
-      const r = circles.data32F[i*3+2];
-      state.markers.push({x, y, r});
-    }
-    src.delete(); gray.delete(); circles.delete();
-    redrawOverlay();
-    updatePipeCount();
-    toast(`Terdeteksi ${state.markers.length} pipa — cek & koreksi manual bila perlu`);
-  }catch(err){
-    console.error(err);
-    toast('Deteksi gagal, coba atur sensitivitas / hitung manual.');
-  }
+  toast('Mendeteksi seluruh foto…');
+  state.markers = detectCirclesInRect(0, 0, baseCanvas.width, baseCanvas.height);
+  sctx.clearRect(0,0,shadeCanvas.width, shadeCanvas.height);
+  redrawOverlay();
+  updatePipeCount();
+  toast(`Terdeteksi ${state.markers.length} pipa — cek & koreksi manual bila perlu`);
 }
 
 /* ============================================================
@@ -724,6 +824,7 @@ function buildSummary(){
   merged.width = baseCanvas.width; merged.height = baseCanvas.height;
   const mctx = merged.getContext('2d');
   mctx.drawImage(baseCanvas,0,0);
+  mctx.drawImage(shadeCanvas,0,0);
   mctx.drawImage(overlayCanvas,0,0);
   $('sThumbPipe').src = merged.toDataURL('image/jpeg', 0.85);
   state.resultImageDataUrl = merged.toDataURL('image/jpeg', 0.85);
