@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hitung Pipa — RUCIKA Warehouse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#11161b;
+    --bg-grid: rgba(255,255,255,0.035);
+    --surface:#1a2129;
+    --surface-2:#212a33;
+    --border:#2c3742;
+    --green:#22b24c;
+    --green-dim:rgba(34,178,76,0.14);
+    --green-line:rgba(34,178,76,0.5);
+    --yellow:#f2b705;
+    --yellow-dim:rgba(242,183,5,0.15);
+    --text:#edf1f4;
+    --muted:#8ea0ac;
+    --danger:#e5484d;
+    --danger-dim:rgba(229,72,77,0.14);
+    --radius:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 15% 8%, rgba(34,178,76,0.10), transparent 40%),
+      radial-gradient(circle at 90% 90%, rgba(242,183,5,0.06), transparent 45%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+  }
+  #app{width:100%; max-width:480px; min-height:100vh; display:flex; flex-direction:column; position:relative;}
+
+  /* ---------- HEADER ---------- */
+  header{
+    padding:22px 20px 16px;
+    position:relative;
+    overflow:hidden;
+    border-bottom:1px solid var(--border);
+  }
+  header::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1.4px);
+    background-size:14px 14px;
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent 90%);
+    mask-image: linear-gradient(to bottom, black, transparent 90%);
+    opacity:0.5;
+    pointer-events:none;
+  }
+  .brand{display:flex; align-items:center; gap:10px; position:relative;}
+  .brand .ring{
+    width:30px; height:30px; border-radius:50%;
+    border:3px solid var(--green);
+    box-shadow: inset 0 0 0 3px var(--bg), 0 0 0 1px var(--green-line);
+    flex-shrink:0;
+  }
+  .brand h1{font-family:'Space Grotesk',sans-serif; font-size:18px; margin:0; letter-spacing:0.2px;}
+  .brand span{display:block; font-size:11px; color:var(--muted); letter-spacing:0.6px; text-transform:uppercase; margin-top:1px;}
+
+  .steps{display:flex; gap:6px; margin-top:18px; position:relative;}
+  .step{flex:1; display:flex; flex-direction:column; align-items:center; gap:6px;}
+  .step .dot{
+    width:30px; height:30px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600;
+    border:2px solid var(--border); color:var(--muted);
+    background:var(--surface);
+    transition:all .25s ease;
+  }
+  .step .bar{height:2px; width:100%; background:var(--border); margin-top:-14px;}
+  .step:first-child .bar{visibility:hidden;}
+  .step small{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; text-align:center;}
+  .step.active .dot{border-color:var(--green); color:var(--green); background:var(--green-dim); box-shadow:0 0 0 4px var(--green-dim);}
+  .step.done .dot{border-color:var(--green); background:var(--green); color:#0b1a10;}
+  .step.done .dot::after{content:"✓";}
+  .step.active small, .step.done small{color:var(--text);}
+
+  /* ---------- MAIN ---------- */
+  main{flex:1; padding:20px 20px 110px; display:flex; flex-direction:column; gap:16px;}
+  .screen{display:none; flex-direction:column; gap:16px; animation:fade .3s ease;}
+  .screen.active{display:flex;}
+  @keyframes fade{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+
+  h2.title{font-family:'Space Grotesk',sans-serif; font-size:20px; margin:2px 0 0;}
+  p.sub{color:var(--muted); font-size:13px; margin:-8px 0 4px; line-height:1.5;}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:16px;
+  }
+
+  /* search + list */
+  .search-wrap{position:relative;}
+  .search-wrap input{
+    width:100%; padding:14px 14px 14px 42px; border-radius:12px;
+    border:1px solid var(--border); background:var(--surface-2); color:var(--text);
+    font-size:15px; font-family:'Inter',sans-serif;
+  }
+  .search-wrap input:focus{outline:none; border-color:var(--green);}
+  .search-wrap svg{position:absolute; left:14px; top:50%; transform:translateY(-50%); opacity:0.5;}
+
+  .voucher-list{display:flex; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto; margin-top:12px;}
+  .voucher-item{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:12px 14px; border-radius:12px; border:1px solid var(--border);
+    background:var(--surface-2); cursor:pointer; transition:.15s;
+  }
+  .voucher-item:active{transform:scale(0.98);}
+  .voucher-item.selected{border-color:var(--green); background:var(--green-dim);}
+  .voucher-item .vnum{font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600;}
+  .voucher-item .vdesc{font-size:11px; color:var(--muted); margin-top:2px;}
+  .voucher-item .vqty{font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--green); font-weight:600;}
+  .empty-hint{text-align:center; color:var(--muted); font-size:13px; padding:24px 8px;}
+
+  .detail-card{border:1px solid var(--green-line); background:var(--green-dim);}
+  .detail-row{display:flex; justify-content:space-between; padding:6px 0; font-size:13px;}
+  .detail-row b{font-family:'IBM Plex Mono',monospace; font-size:14px;}
+  .detail-row + .detail-row{border-top:1px solid rgba(255,255,255,0.06);}
+
+  /* camera capture */
+  .capture-box{
+    border:1.5px dashed var(--border); border-radius:var(--radius);
+    min-height:280px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px; color:var(--muted); background:var(--surface); position:relative; overflow:hidden;
+  }
+  .capture-box img{width:100%; height:100%; object-fit:cover; position:absolute; inset:0;}
+  .capture-box .cap-label{position:relative; z-index:1; text-align:center; padding:0 24px;}
+  .capture-box .cap-icon{width:52px; height:52px; border-radius:50%; border:2px solid var(--border); display:flex; align-items:center; justify-content:center; margin:0 auto 10px;}
+
+  /* counting canvas */
+  .canvas-wrap{position:relative; border-radius:var(--radius); overflow:hidden; border:1px solid var(--border); background:#000; touch-action:none;}
+  .canvas-wrap canvas{display:block; width:100%; height:auto;}
+  .canvas-wrap canvas.overlay{position:absolute; inset:0;}
+
+  .counter-readout{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px;
+  }
+  .counter-readout .label{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px;}
+  .counter-readout .num{
+    font-family:'IBM Plex Mono',monospace; font-size:34px; font-weight:700; color:var(--green);
+    position:relative;
+  }
+  .counter-readout .ring-icon{width:44px;height:44px;border-radius:50%;border:3px solid var(--green); opacity:.8;}
+
+  .toolbar{display:flex; gap:8px; flex-wrap:wrap;}
+  .tbtn{
+    flex:1; min-width:0; padding:11px 8px; border-radius:12px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--text); font-size:12.5px; font-weight:600; text-align:center;
+    display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; transition:.15s;
+  }
+  .tbtn.active{border-color:var(--green); background:var(--green-dim); color:var(--green);}
+  .tbtn:active{transform:scale(0.96);}
+  .tbtn svg{width:18px;height:18px;}
+
+  .slider-row{display:flex; flex-direction:column; gap:4px;}
+  .slider-row label{font-size:11px; color:var(--muted); display:flex; justify-content:space-between;}
+  .slider-row input[type=range]{width:100%; accent-color:var(--green);}
+  .adv-panel{display:none; flex-direction:column; gap:10px; padding-top:6px; border-top:1px solid var(--border); margin-top:4px;}
+  .adv-panel.show{display:flex;}
+
+  /* summary */
+  .summary-status{display:flex; align-items:center; gap:12px; padding:16px; border-radius:var(--radius);}
+  .summary-status.ok{background:var(--green-dim); border:1px solid var(--green-line);}
+  .summary-status.warn{background:var(--danger-dim); border:1px solid rgba(229,72,77,0.5);}
+  .summary-status .icon{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0; font-size:18px;}
+  .summary-status.ok .icon{background:var(--green); color:#0b1a10;}
+  .summary-status.warn .icon{background:var(--danger); color:#2a0b0c;}
+  .summary-status .msg b{display:block; font-family:'Space Grotesk',sans-serif; font-size:15px;}
+  .summary-status .msg span{font-size:12px; color:var(--muted);}
+
+  .thumb-row{display:flex; gap:10px;}
+  .thumb-row .thumb{flex:1; border-radius:12px; overflow:hidden; border:1px solid var(--border); aspect-ratio:1/1; position:relative;}
+  .thumb-row .thumb img{width:100%; height:100%; object-fit:cover;}
+  .thumb-row .thumb span{position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.55); font-size:10px; padding:4px 6px; text-transform:uppercase; letter-spacing:0.4px;}
+
+  /* ---------- FOOTER NAV ---------- */
+  .footer-nav{
+    position:fixed; bottom:0; left:50%; transform:translateX(-50%);
+    width:100%; max-width:480px; padding:14px 20px 20px;
+    background:linear-gradient(to top, var(--bg) 55%, transparent);
+    display:flex; gap:10px; z-index:20;
+  }
+  .btn{
+    flex:1; padding:15px; border-radius:14px; font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:14.5px;
+    border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; transition:.15s;
+  }
+  .btn:active{transform:scale(0.97);}
+  .btn-primary{background:var(--green); color:#0b1a10;}
+  .btn-primary:disabled{background:var(--surface-2); color:var(--muted); cursor:not-allowed;}
+  .btn-ghost{background:var(--surface-2); color:var(--text); border:1px solid var(--border); flex:0 0 52px;}
+
+  .toast{
+    position:fixed; top:16px; left:50%; transform:translateX(-50%);
+    background:var(--surface-2); border:1px solid var(--border); padding:10px 16px; border-radius:12px;
+    font-size:13px; z-index:50; opacity:0; pointer-events:none; transition:.25s;
+  }
+  .toast.show{opacity:1; top:20px;}
+
+  ::-webkit-scrollbar{width:5px;} ::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="brand">
+      <div class="ring"></div>
+      <div>
+        <h1>Hitung Pipa</h1>
+        <span>Warehouse · RUCIKA Cibitung</span>
+      </div>
+    </div>
+    <div class="steps" id="stepIndicator">
+      <div class="step" data-step="1"><div class="bar"></div><div class="dot">01</div><small>Voucher</small></div>
+      <div class="step" data-step="2"><div class="bar"></div><div class="dot">02</div><small>Foto Voucher</small></div>
+      <div class="step" data-step="3"><div class="bar"></div><div class="dot">03</div><small>Hitung</small></div>
+      <div class="step" data-step="4"><div class="bar"></div><div class="dot">04</div><small>Kirim</small></div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- SCREEN 1: PILIH VOUCHER -->
+    <section class="screen active" id="screen-1">
+      <h2 class="title">Pilih nomor voucher</h2>
+      <p class="sub">Cari nomor voucher dari data stok. Nama item &amp; qty voucher akan muncul otomatis.</p>
+      <div class="search-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="voucherSearch" placeholder="Ketik nomor voucher / dokumen…" autocomplete="off">
+      </div>
+      <div class="voucher-list" id="voucherList">
+        <div class="empty-hint" id="voucherEmpty">Memuat data voucher…</div>
+      </div>
+
+      <div class="card detail-card" id="voucherDetail" style="display:none;">
+        <div class="detail-row"><span>Nomor Voucher</span><b id="dVnum">—</b></div>
+        <div class="detail-row"><span>Nama Item</span><b id="dVdesc">—</b></div>
+        <div class="detail-row"><span>Qty Voucher</span><b id="dVqty">—</b></div>
+      </div>
+    </section>
+
+    <!-- SCREEN 2: FOTO VOUCHER -->
+    <section class="screen" id="screen-2">
+      <h2 class="title">Foto nomor voucher</h2>
+      <p class="sub">Wajib difoto sebagai bukti sebelum menghitung fisik pipa.</p>
+      <div class="capture-box" id="voucherCaptureBox">
+        <div class="cap-label">
+          <div class="cap-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8a2 2 0 012-2h1l1-2h8l1 2h1a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          </div>
+          Ketuk untuk buka kamera
+        </div>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="voucherPhotoInput" hidden>
+      <button class="tbtn" id="retakeVoucherBtn" style="display:none; flex:none; width:100%;">↺ Ambil ulang foto</button>
+    </section>
+
+    <!-- SCREEN 3: HITUNG PIPA -->
+    <section class="screen" id="screen-3">
+      <h2 class="title">Hitung pipa</h2>
+      <p class="sub">Foto tumpukan pipa, lalu deteksi otomatis. Koreksi manual: tap = tandai/hapus titik, arsir = tandai area yang sudah dicek.</p>
+
+      <div id="pipeCaptureStage">
+        <div class="capture-box" id="pipeCaptureBox">
+          <div class="cap-label">
+            <div class="cap-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8a2 2 0 012-2h1l1-2h8l1 2h1a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z"/><circle cx="12" cy="13" r="3.5"/></svg>
+            </div>
+            Ketuk untuk foto tumpukan pipa
+          </div>
+        </div>
+        <input type="file" accept="image/*" capture="environment" id="pipePhotoInput" hidden>
+      </div>
+
+      <div id="pipeCountStage" style="display:none; flex-direction:column; gap:14px;">
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="baseCanvas"></canvas>
+          <canvas id="overlayCanvas" class="overlay"></canvas>
+        </div>
+
+        <div class="counter-readout">
+          <div>
+            <div class="label">Jumlah pipa</div>
+            <div class="num" id="pipeCount">0</div>
+          </div>
+          <div class="ring-icon"></div>
+        </div>
+
+        <div class="toolbar">
+          <div class="tbtn active" id="tool-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
+            Tandai
+          </div>
+          <div class="tbtn" id="tool-shade">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6M9 11l7-7 4 4-7 7M9 11l4 4M5 21l-2-2 3-3 2 2z"/></svg>
+            Arsir
+          </div>
+          <div class="tbtn" id="tool-auto">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2 2M16.4 16.4l2 2M5.6 18.4l2-2M16.4 7.6l2-2"/><circle cx="12" cy="12" r="3.5"/></svg>
+            Deteksi
+          </div>
+          <div class="tbtn" id="tool-adv">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            Atur
+          </div>
+        </div>
+
+        <div class="card adv-panel" id="advPanel">
+          <div class="slider-row"><label><span>Sensitivitas deteksi</span><span id="valSens">30</span></label><input type="range" id="sensSlider" min="12" max="60" value="30"></div>
+          <div class="slider-row"><label><span>Radius min (px)</span><span id="valMin">8</span></label><input type="range" id="minSlider" min="3" max="60" value="8"></div>
+          <div class="slider-row"><label><span>Radius maks (px)</span><span id="valMax">40</span></label><input type="range" id="maxSlider" min="10" max="120" value="40"></div>
+          <div class="slider-row"><label><span>Ukuran kuas arsir</span><span id="valBrush">22</span></label><input type="range" id="brushSlider" min="8" max="60" value="22"></div>
+          <button class="tbtn" id="applyDetectBtn" style="flex:none;">Jalankan ulang deteksi</button>
+        </div>
+
+        <div style="display:flex; gap:8px;">
+          <button class="tbtn" id="undoBtn" style="flex:1;">↺ Urungkan titik terakhir</button>
+          <button class="tbtn" id="resetBtn" style="flex:1;">✕ Reset semua</button>
+        </div>
+        <button class="tbtn" id="retakePipeBtn" style="flex:none; width:100%;">📷 Ambil ulang foto pipa</button>
+      </div>
+    </section>
+
+    <!-- SCREEN 4: RINGKASAN -->
+    <section class="screen" id="screen-4">
+      <h2 class="title">Ringkasan hasil hitung</h2>
+
+      <div class="summary-status" id="summaryStatus">
+        <div class="icon" id="summaryIcon">–</div>
+        <div class="msg"><b id="summaryTitle">—</b><span id="summarySub">—</span></div>
+      </div>
+
+      <div class="card">
+        <div class="detail-row"><span>Nomor Voucher</span><b id="sVnum">—</b></div>
+        <div class="detail-row"><span>Nama Item</span><b id="sVdesc">—</b></div>
+        <div class="detail-row"><span>Qty Voucher</span><b id="sVqty">—</b></div>
+        <div class="detail-row"><span>Hasil Hitung</span><b id="sCount">—</b></div>
+        <div class="detail-row"><span>Selisih</span><b id="sDiff">—</b></div>
+      </div>
+
+      <div class="thumb-row">
+        <div class="thumb"><img id="sThumbVoucher"><span>Foto voucher</span></div>
+        <div class="thumb"><img id="sThumbPipe"><span>Foto pipa</span></div>
+      </div>
+
+      <div class="slider-row">
+        <label>Catatan (opsional)</label>
+        <input type="text" id="noteInput" placeholder="Contoh: pipa penyok 2 batang…" style="width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-size:14px;">
+      </div>
+    </section>
+
+  </main>
+
+  <div class="footer-nav">
+    <button class="btn btn-ghost" id="backBtn">←</button>
+    <button class="btn btn-primary" id="nextBtn" disabled>Pilih voucher dulu</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script async src="https://docs.opencv.org/4.9.0/opencv.js" onload="window.__cvLoaded=true" type="text/javascript"></script>
+<script>
+/* ============================================================
+   KONFIGURASI — ganti URL ini dengan Web App URL Apps Script kamu
+   ============================================================ */
+const CONFIG = {
+  API_URL: "https://script.google.com/macros/s/AKfycbxTl9WOb48kWPweIeHjZddWtnT-sYdh9rOcQLXGthMf6rEcAMMJ3QLZc0Sb30mnfpr0TQ/exec"
+};
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let state = {
+  step: 1,
+  vouchers: [],
+  selectedVoucher: null,
+  voucherPhoto: null,   // base64
+  pipePhoto: null,      // base64 (original, for upload)
+  markers: [],           // [{x,y,r}] in canvas-space
+  shadePaths: [],         // for redraw if needed
+  tool: 'mark',
+  imgNaturalW: 0, imgNaturalH: 0
+};
+
+const $ = (id) => document.getElementById(id);
+const toast = (msg) => {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+};
+
+/* ============================================================
+   STEP NAVIGATION
+   ============================================================ */
+function goToStep(n){
+  state.step = n;
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $('screen-'+n).classList.add('active');
+
+  document.querySelectorAll('.step').forEach(el=>{
+    const s = parseInt(el.dataset.step);
+    el.classList.toggle('active', s===n);
+    el.classList.toggle('done', s<n);
+  });
+
+  $('backBtn').style.visibility = n===1 ? 'hidden' : 'visible';
+  updateNextButton();
+}
+
+function updateNextButton(){
+  const btn = $('nextBtn');
+  if(state.step===1){
+    btn.disabled = !state.selectedVoucher;
+    btn.textContent = state.selectedVoucher ? 'Lanjut →' : 'Pilih voucher dulu';
+  } else if(state.step===2){
+    btn.disabled = !state.voucherPhoto;
+    btn.textContent = state.voucherPhoto ? 'Lanjut →' : 'Foto voucher dulu';
+  } else if(state.step===3){
+    btn.disabled = state.markers.length===0;
+    btn.textContent = state.markers.length ? `Lanjut (${state.markers.length} pipa) →` : 'Hitung pipa dulu';
+  } else if(state.step===4){
+    btn.disabled = false;
+    btn.textContent = 'Kirim hasil ✓';
+  }
+}
+
+$('backBtn').onclick = () => { if(state.step>1) goToStep(state.step-1); };
+$('nextBtn').onclick = () => {
+  if(state.step===1 && state.selectedVoucher) goToStep(2);
+  else if(state.step===2 && state.voucherPhoto) goToStep(3);
+  else if(state.step===3 && state.markers.length){ buildSummary(); goToStep(4); }
+  else if(state.step===4) submitResult();
+};
+
+/* ============================================================
+   SCREEN 1 — VOUCHER
+   ============================================================ */
+async function loadVouchers(){
+  try{
+    const res = await fetch(`${CONFIG.API_URL}?mode=getVouchers`);
+    const data = await res.json();
+    state.vouchers = data.vouchers || [];
+    renderVoucherList(state.vouchers);
+  }catch(e){
+    $('voucherEmpty').textContent = 'Gagal memuat data. Cek koneksi / konfigurasi API_URL.';
+  }
+}
+
+function renderVoucherList(list){
+  const box = $('voucherList');
+  box.innerHTML = '';
+  if(!list.length){ box.innerHTML = '<div class="empty-hint" id="voucherEmpty">Voucher tidak ditemukan</div>'; return; }
+  list.slice(0,80).forEach(v=>{
+    const div = document.createElement('div');
+    div.className = 'voucher-item' + (state.selectedVoucher && state.selectedVoucher.doc===v.doc ? ' selected':'');
+    div.innerHTML = `<div><div class="vnum">${v.doc}</div><div class="vdesc">${v.desc}</div></div><div class="vqty">${v.qty}</div>`;
+    div.onclick = () => selectVoucher(v);
+    box.appendChild(div);
+  });
+}
+
+function selectVoucher(v){
+  state.selectedVoucher = v;
+  renderVoucherList(filterVouchers($('voucherSearch').value));
+  $('voucherDetail').style.display = 'block';
+  $('dVnum').textContent = v.doc;
+  $('dVdesc').textContent = v.desc;
+  $('dVqty').textContent = v.qty;
+  updateNextButton();
+}
+
+function filterVouchers(q){
+  q = (q||'').toLowerCase().trim();
+  if(!q) return state.vouchers;
+  return state.vouchers.filter(v => v.doc.toLowerCase().includes(q) || v.desc.toLowerCase().includes(q));
+}
+
+$('voucherSearch').addEventListener('input', (e)=> renderVoucherList(filterVouchers(e.target.value)));
+
+/* ============================================================
+   SCREEN 2 — FOTO VOUCHER
+   ============================================================ */
+$('voucherCaptureBox').onclick = () => $('voucherPhotoInput').click();
+$('voucherPhotoInput').onchange = (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    state.voucherPhoto = ev.target.result;
+    $('voucherCaptureBox').innerHTML = `<img src="${ev.target.result}">`;
+    $('retakeVoucherBtn').style.display = 'block';
+    updateNextButton();
+  };
+  reader.readAsDataURL(file);
+};
+$('retakeVoucherBtn').onclick = () => $('voucherPhotoInput').click();
+
+/* ============================================================
+   SCREEN 3 — HITUNG PIPA
+   ============================================================ */
+$('pipeCaptureBox').onclick = () => $('pipePhotoInput').click();
+$('pipePhotoInput').onchange = (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    state.pipePhoto = ev.target.result;
+    loadImageToCanvas(ev.target.result);
+    $('pipeCaptureStage').style.display = 'none';
+    $('pipeCountStage').style.display = 'flex';
+  };
+  reader.readAsDataURL(file);
+};
+$('retakePipeBtn').onclick = () => {
+  state.markers = [];
+  $('pipeCaptureStage').style.display = 'block';
+  $('pipeCountStage').style.display = 'none';
+  $('pipePhotoInput').click();
+};
+
+let baseCanvas, overlayCanvas, bctx, octx, scaleRatio=1;
+
+function loadImageToCanvas(src){
+  const img = new Image();
+  img.onload = () => {
+    state.imgNaturalW = img.naturalWidth;
+    state.imgNaturalH = img.naturalHeight;
+    const maxW = 900;
+    const w = Math.min(maxW, img.naturalWidth);
+    const h = Math.round(img.naturalHeight * (w/img.naturalWidth));
+    scaleRatio = w / img.naturalWidth;
+
+    baseCanvas = $('baseCanvas'); overlayCanvas = $('overlayCanvas');
+    baseCanvas.width = w; baseCanvas.height = h;
+    overlayCanvas.width = w; overlayCanvas.height = h;
+    bctx = baseCanvas.getContext('2d'); octx = overlayCanvas.getContext('2d');
+    bctx.drawImage(img, 0, 0, w, h);
+
+    state.markers = [];
+    redrawOverlay();
+    updatePipeCount();
+  };
+  img.src = src;
+}
+
+function redrawOverlay(){
+  octx.clearRect(0,0,overlayCanvas.width, overlayCanvas.height);
+  state.markers.forEach((m,i)=>{
+    octx.beginPath();
+    octx.arc(m.x, m.y, m.r, 0, Math.PI*2);
+    octx.strokeStyle = '#22b24c';
+    octx.lineWidth = 2;
+    octx.stroke();
+    octx.fillStyle = 'rgba(34,178,76,0.18)';
+    octx.fill();
+  });
+}
+
+function updatePipeCount(){
+  $('pipeCount').textContent = state.markers.length;
+  updateNextButton();
+}
+
+/* --- interaction: mark / shade --- */
+let isDrawing = false;
+function canvasPos(evt){
+  const rect = overlayCanvas.getBoundingClientRect();
+  const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+  const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+  return {
+    x: (clientX - rect.left) * (overlayCanvas.width / rect.width),
+    y: (clientY - rect.top) * (overlayCanvas.height / rect.height)
+  };
+}
+
+function handlePointerDown(evt){
+  evt.preventDefault();
+  const p = canvasPos(evt);
+  if(state.tool === 'mark'){
+    // check if tapping existing marker -> remove it
+    const hitIndex = state.markers.findIndex(m => Math.hypot(m.x-p.x, m.y-p.y) < Math.max(m.r, 14));
+    if(hitIndex >= 0){
+      state.markers.splice(hitIndex,1);
+    } else {
+      const defaultR = parseInt($('minSlider').value) + 6;
+      state.markers.push({x:p.x, y:p.y, r:defaultR});
+    }
+    redrawOverlay();
+    updatePipeCount();
+  } else if(state.tool === 'shade'){
+    isDrawing = true;
+    drawShade(p);
+  }
+}
+function handlePointerMove(evt){
+  if(state.tool==='shade' && isDrawing){
+    evt.preventDefault();
+    drawShade(canvasPos(evt));
+  }
+}
+function handlePointerUp(){ isDrawing = false; }
+
+function drawShade(p){
+  const brush = parseInt($('brushSlider').value);
+  octx.beginPath();
+  octx.arc(p.x, p.y, brush, 0, Math.PI*2);
+  octx.fillStyle = 'rgba(242,183,5,0.28)';
+  octx.fill();
+}
+
+overlayCanvas && null;
+['mousedown','touchstart'].forEach(ev=> document.addEventListener(ev, (e)=>{
+  if(e.target.id==='overlayCanvas') handlePointerDown(e);
+}, {passive:false}));
+['mousemove','touchmove'].forEach(ev=> document.addEventListener(ev, (e)=>{
+  if(e.target.id==='overlayCanvas' || isDrawing) handlePointerMove(e);
+}, {passive:false}));
+['mouseup','touchend'].forEach(ev=> document.addEventListener(ev, handlePointerUp));
+
+/* --- toolbar --- */
+function setTool(name){
+  state.tool = name;
+  document.querySelectorAll('#tool-mark,#tool-shade').forEach(el=>el.classList.remove('active'));
+  if(name==='mark') $('tool-mark').classList.add('active');
+  if(name==='shade') $('tool-shade').classList.add('active');
+}
+$('tool-mark').onclick = () => setTool('mark');
+$('tool-shade').onclick = () => { setTool('shade'); $('advPanel').classList.remove('show'); };
+$('tool-adv').onclick = () => $('advPanel').classList.toggle('show');
+$('tool-auto').onclick = () => runAutoDetect();
+$('applyDetectBtn').onclick = () => runAutoDetect();
+
+$('undoBtn').onclick = () => { state.markers.pop(); redrawOverlay(); updatePipeCount(); };
+$('resetBtn').onclick = () => { state.markers = []; redrawOverlay(); updatePipeCount(); };
+
+['sensSlider','minSlider','maxSlider','brushSlider'].forEach(id=>{
+  $(id).addEventListener('input', (e)=>{
+    const map = {sensSlider:'valSens', minSlider:'valMin', maxSlider:'valMax', brushSlider:'valBrush'};
+    $(map[id]).textContent = e.target.value;
+  });
+});
+
+/* --- OpenCV auto detect --- */
+function runAutoDetect(){
+  if(!(window.cv && cv.Mat)){
+    toast('Modul deteksi masih dimuat, tunggu sebentar…');
+    setTimeout(runAutoDetect, 800);
+    return;
+  }
+  toast('Mendeteksi pipa…');
+  try{
+    const src = cv.imread(baseCanvas);
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.medianBlur(gray, gray, 5);
+    const circles = new cv.Mat();
+    const minR = parseInt($('minSlider').value);
+    const maxR = parseInt($('maxSlider').value);
+    const sens = parseInt($('sensSlider').value);
+    const minDist = Math.max(6, minR * 1.2);
+    cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, minDist, 100, sens, minR, maxR);
+
+    state.markers = [];
+    for(let i=0; i<circles.cols; i++){
+      const x = circles.data32F[i*3];
+      const y = circles.data32F[i*3+1];
+      const r = circles.data32F[i*3+2];
+      state.markers.push({x, y, r});
+    }
+    src.delete(); gray.delete(); circles.delete();
+    redrawOverlay();
+    updatePipeCount();
+    toast(`Terdeteksi ${state.markers.length} pipa — cek & koreksi manual bila perlu`);
+  }catch(err){
+    console.error(err);
+    toast('Deteksi gagal, coba atur sensitivitas / hitung manual.');
+  }
+}
+
+/* ============================================================
+   SCREEN 4 — RINGKASAN
+   ============================================================ */
+function buildSummary(){
+  const v = state.selectedVoucher;
+  const count = state.markers.length;
+  const qty = parseInt(v.qty) || 0;
+  const diff = count - qty;
+
+  $('sVnum').textContent = v.doc;
+  $('sVdesc').textContent = v.desc;
+  $('sVqty').textContent = qty;
+  $('sCount').textContent = count;
+  $('sDiff').textContent = (diff>0?'+':'') + diff;
+
+  const box = $('summaryStatus');
+  if(diff === 0){
+    box.className = 'summary-status ok';
+    $('summaryIcon').textContent = '✓';
+    $('summaryTitle').textContent = 'Sesuai voucher';
+    $('summarySub').textContent = 'Jumlah hasil hitung cocok dengan qty voucher.';
+  } else {
+    box.className = 'summary-status warn';
+    $('summaryIcon').textContent = '!';
+    $('summaryTitle').textContent = 'Ada selisih';
+    $('summarySub').textContent = diff>0 ? `Lebih ${diff} dari voucher.` : `Kurang ${Math.abs(diff)} dari voucher.`;
+  }
+
+  $('sThumbVoucher').src = state.voucherPhoto;
+  // merge markers onto pipe photo for the summary thumbnail
+  const merged = document.createElement('canvas');
+  merged.width = baseCanvas.width; merged.height = baseCanvas.height;
+  const mctx = merged.getContext('2d');
+  mctx.drawImage(baseCanvas,0,0);
+  mctx.drawImage(overlayCanvas,0,0);
+  $('sThumbPipe').src = merged.toDataURL('image/jpeg', 0.85);
+  state.resultImageDataUrl = merged.toDataURL('image/jpeg', 0.85);
+}
+
+/* ============================================================
+   SUBMIT
+   ============================================================ */
+async function submitResult(){
+  const btn = $('nextBtn');
+  btn.disabled = true; btn.textContent = 'Mengirim…';
+  try{
+    const payload = {
+      mode: 'submitHitungPipa',
+      voucher: state.selectedVoucher.doc,
+      deskripsi: state.selectedVoucher.desc,
+      qtyVoucher: state.selectedVoucher.qty,
+      hasilHitung: state.markers.length,
+      catatan: $('noteInput').value,
+      fotoVoucher: state.voucherPhoto,
+      fotoPipa: state.resultImageDataUrl,
+      waktu: new Date().toISOString()
+    };
+    const res = await fetch(CONFIG.API_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(data.ok){
+      toast('Berhasil dikirim ✓');
+      setTimeout(resetApp, 1200);
+    } else {
+      toast('Gagal mengirim: ' + (data.error||'tidak diketahui'));
+      btn.disabled = false; updateNextButton();
+    }
+  }catch(e){
+    toast('Gagal terhubung ke server.');
+    btn.disabled = false; updateNextButton();
+  }
+}
+
+function resetApp(){
+  state = {step:1, vouchers: state.vouchers, selectedVoucher:null, voucherPhoto:null, pipePhoto:null, markers:[], shadePaths:[], tool:'mark', imgNaturalW:0, imgNaturalH:0};
+  $('voucherDetail').style.display = 'none';
+  $('voucherCaptureBox').innerHTML = `<div class="cap-label"><div class="cap-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8a2 2 0 012-2h1l1-2h8l1 2h1a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z"/><circle cx="12" cy="13" r="3.5"/></svg></div>Ketuk untuk buka kamera</div>`;
+  $('retakeVoucherBtn').style.display = 'none';
+  $('pipeCaptureStage').style.display = 'block';
+  $('pipeCountStage').style.display = 'none';
+  $('noteInput').value = '';
+  renderVoucherList(state.vouchers);
+  goToStep(1);
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+loadVouchers();
+goToStep(1);
+</script>
+</body>
+</html>
