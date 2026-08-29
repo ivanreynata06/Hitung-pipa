@@ -323,20 +323,12 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6M9 11l7-7 4 4-7 7M9 11l4 4M5 21l-2-2 3-3 2 2z"/></svg>
             Arsir
           </div>
-          <div class="tbtn" id="tool-adv">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-            Atur
+          <div class="tbtn" id="tool-scanall">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2 2M16.4 16.4l2 2M5.6 18.4l2-2M16.4 7.6l2-2"/><circle cx="12" cy="12" r="3.5"/></svg>
+            Scan Semua
           </div>
         </div>
         <p class="sub" style="margin:-6px 0 0;" id="toolHint">Mode Tandai aktif — tap pipa buat tambah/hapus titik manual.</p>
-
-        <div class="card adv-panel" id="advPanel">
-          <div class="slider-row"><label><span>Sensitivitas deteksi (makin kanan makin longgar)</span><span id="valSens">62</span></label><input type="range" id="sensSlider" min="10" max="90" value="62"></div>
-          <div class="slider-row"><label><span>Radius min (px)</span><span id="valMin">14</span></label><input type="range" id="minSlider" min="5" max="80" value="14"></div>
-          <div class="slider-row"><label><span>Radius maks (px)</span><span id="valMax">60</span></label><input type="range" id="maxSlider" min="15" max="140" value="60"></div>
-          <div class="slider-row"><label><span>Ukuran kuas arsir</span><span id="valBrush">22</span></label><input type="range" id="brushSlider" min="8" max="60" value="22"></div>
-          <button class="tbtn" id="applyDetectBtn" style="flex:none;">⚡ Scan seluruh foto sekaligus</button>
-        </div>
 
         <div style="display:flex; gap:8px;">
           <button class="tbtn" id="undoBtn" style="flex:1;">↺ Urungkan titik terakhir</button>
@@ -654,7 +646,7 @@ function handlePointerDown(evt){
   if(state.tool === 'mark'){
     const hitIndex = state.markers.findIndex(m => Math.hypot(m.x-p.x, m.y-p.y) < Math.max(m.r, 14));
     if(hitIndex >= 0) state.markers.splice(hitIndex,1);
-    else state.markers.push({x:p.x, y:p.y, r: parseInt($('minSlider').value) + 6});
+    else state.markers.push({x:p.x, y:p.y, r: defaultMarkerRadius()});
     redrawOverlay();
     updatePipeCount();
   } else if(state.tool === 'box'){
@@ -678,7 +670,7 @@ function handlePointerMove(evt){
     evt.preventDefault();
     const p = canvasPos(evt);
     drawShade(p);
-    const b = parseInt($('brushSlider').value);
+    const b = brushSize();
     shadeStroke.minX = Math.min(shadeStroke.minX, p.x - b);
     shadeStroke.minY = Math.min(shadeStroke.minY, p.y - b);
     shadeStroke.maxX = Math.max(shadeStroke.maxX, p.x + b);
@@ -696,8 +688,17 @@ function handlePointerUp(){
   }
 }
 
+function brushSize(){ return Math.max(14, Math.round(baseCanvas.width * 0.028)); }
+function defaultMarkerRadius(){
+  if(state.markers.length){
+    const radii = state.markers.map(m=>m.r).sort((a,b)=>a-b);
+    return radii[Math.floor(radii.length/2)];
+  }
+  return Math.max(14, Math.round(baseCanvas.width * 0.02));
+}
+
 function drawShade(p){
-  const brush = parseInt($('brushSlider').value);
+  const brush = brushSize();
   sctx.beginPath();
   sctx.arc(p.x, p.y, brush, 0, Math.PI*2);
   sctx.fillStyle = 'rgba(242,183,5,0.32)';
@@ -774,67 +775,44 @@ function setTool(name){
   $('toolHint').textContent = toolHints[name];
 }
 $('tool-mark').onclick = () => setTool('mark');
-$('tool-box').onclick = () => { setTool('box'); $('advPanel').classList.remove('show'); };
-$('tool-shade').onclick = () => { setTool('shade'); $('advPanel').classList.remove('show'); };
-$('tool-adv').onclick = () => $('advPanel').classList.toggle('show');
-$('applyDetectBtn').onclick = () => runAutoDetect();
+$('tool-box').onclick = () => setTool('box');
+$('tool-shade').onclick = () => setTool('shade');
+$('tool-scanall').onclick = () => runAutoDetect();
 
 function cvReady(){ return !!(window.cv && cv.Mat); }
-
-function mergeCircles(base, extra, minSepFactor=0.55){
-  const merged = base.slice();
-  extra.forEach(c=>{
-    const dup = merged.find(m => Math.hypot(m.x-c.x, m.y-c.y) < Math.max(m.r,c.r)*minSepFactor);
-    if(!dup) merged.push(c);
-  });
-  return merged;
-}
 
 function dedupeMarkers(){
   const kept = [];
   state.markers.forEach(m=>{
-    const dup = kept.find(k => Math.hypot(k.x-m.x, k.y-m.y) < Math.max(m.r,k.r)*0.55);
+    const dup = kept.find(k => Math.hypot(k.x-m.x, k.y-m.y) < Math.max(m.r,k.r)*0.6);
     if(!dup) kept.push(m);
   });
   state.markers = kept;
 }
 
-function detectCirclesInRect(x0,y0,w,h){
-  if(!cvReady()) return [];
-  x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0));
-  w = Math.min(baseCanvas.width - x0, Math.round(w));
-  h = Math.min(baseCanvas.height - y0, Math.round(h));
-  if(w < 6 || h < 6) return [];
+function dedupeCircleList(list){
+  const kept = [];
+  list.forEach(c=>{
+    const dup = kept.find(k => Math.hypot(k.x-c.x, k.y-c.y) < Math.max(k.r,c.r)*0.6);
+    if(!dup) kept.push(c);
+  });
+  return kept;
+}
 
-  const minR = parseInt($('minSlider').value);
-  const maxR = parseInt($('maxSlider').value);
-  const sens = parseInt($('sensSlider').value); // makin besar = makin longgar (makin banyak kedeteksi)
-  const circMin = Math.max(0.24, 0.82 - (sens/100)*0.55);
-  const blockSize = Math.min(71, Math.max(15, (2*Math.round(minR*1.4))+1));
-
-  let src,roi,gray,thresh,kernel,contours,hierarchy,clahe,houghMat;
+/* Satu blob = satu kontur lubang pipa yang bentuknya bundar, difilter luas & kebundaran.
+   circMin: ambang kebundaran (1 = lingkaran sempurna). blockSize dari perkiraan radius. */
+function runContourPass(gray, x0, y0, minR, maxR, circMin){
+  const blockSize = Math.min(91, Math.max(15, (2*Math.round(minR*1.4))+1));
+  let thresh,kernel,contours,hierarchy;
+  const results = [];
   try{
-    src = cv.imread(baseCanvas);
-    roi = src.roi(new cv.Rect(x0,y0,w,h));
-    gray = new cv.Mat();
-    cv.cvtColor(roi, gray, cv.COLOR_RGBA2GRAY);
-    cv.GaussianBlur(gray, gray, new cv.Size(5,5), 0);
-
-    // ratakan kontras lokal biar lubang pipa yang gelap kebaca walau pencahayaan foto nggak rata
-    clahe = new cv.CLAHE(2.5, new cv.Size(8,8));
-    clahe.apply(gray, gray);
-
-    // METODE 1: segmentasi lubang gelap tiap pipa jadi blob, difilter bentuk bundar
     thresh = new cv.Mat();
     cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, blockSize, 4);
     kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3,3));
     cv.morphologyEx(thresh, thresh, cv.MORPH_OPEN, kernel);
-
     contours = new cv.MatVector();
     hierarchy = new cv.Mat();
     cv.findContours(thresh, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-
-    let results = [];
     const minArea = Math.PI * minR * minR * 0.3;
     for(let i=0; i<contours.size(); i++){
       const cnt = contours.get(i);
@@ -842,7 +820,7 @@ function detectCirclesInRect(x0,y0,w,h){
       if(area < minArea){ cnt.delete(); continue; }
       const peri = cv.arcLength(cnt, true);
       if(peri <= 0){ cnt.delete(); continue; }
-      const circularity = (4 * Math.PI * area) / (peri * peri); // 1 = lingkaran sempurna
+      const circularity = (4 * Math.PI * area) / (peri * peri);
       const circle = cv.minEnclosingCircle(cnt);
       const r = circle.radius;
       if(circularity >= circMin && r >= minR && r <= maxR){
@@ -850,43 +828,53 @@ function detectCirclesInRect(x0,y0,w,h){
       }
       cnt.delete();
     }
+  }catch(e){ console.error(e); }
+  finally{
+    [thresh,kernel,contours,hierarchy].forEach(m=>{ try{ m && m.delete && m.delete(); }catch(err){} });
+  }
+  return dedupeCircleList(results);
+}
 
-    // METODE 2: Hough Circle di gray yang sama — nangkep pipa yang lubangnya kurang
-    // kontras / kepotong sebagian sehingga lolos dari metode 1
-    try{
-      houghMat = new cv.Mat();
-      const minDist = Math.max(6, minR * 1.3);
-      const houghParam2 = Math.max(9, 32 - Math.round(sens/4));
-      cv.HoughCircles(gray, houghMat, cv.HOUGH_GRADIENT, 1, minDist, 90, houghParam2, minR, maxR);
-      const houghResults = [];
-      for(let i=0; i<houghMat.cols; i++){
-        houghResults.push({
-          x: houghMat.data32F[i*3] + x0,
-          y: houghMat.data32F[i*3+1] + y0,
-          r: houghMat.data32F[i*3+2]
-        });
-      }
-      results = mergeCircles(results, houghResults);
-    }catch(e2){ console.error('hough pass', e2); }
+/* Deteksi otomatis, kalibrasi sendiri — nggak butuh slider apa pun.
+   Tahap 1: scan longgar buat nebak ukuran pipa yang khas di area ini.
+   Tahap 2: scan ulang dengan radius & ambang yang udah disesuaikan ke ukuran itu. */
+function detectCirclesInRect(x0,y0,w,h){
+  if(!cvReady()) return [];
+  x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0));
+  w = Math.min(baseCanvas.width - x0, Math.round(w));
+  h = Math.min(baseCanvas.height - y0, Math.round(h));
+  if(w < 6 || h < 6) return [];
 
-    return results;
+  let src,roi,gray,clahe;
+  try{
+    src = cv.imread(baseCanvas);
+    roi = src.roi(new cv.Rect(x0,y0,w,h));
+    gray = new cv.Mat();
+    cv.cvtColor(roi, gray, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray, gray, new cv.Size(5,5), 0);
+    clahe = new cv.CLAHE(2.5, new cv.Size(8,8));
+    clahe.apply(gray, gray);
+
+    const loose = runContourPass(gray, x0, y0, 5, Math.max(20, Math.min(w,h)/2), 0.45);
+    if(loose.length < 3) return loose;
+
+    const radii = loose.map(c=>c.r).sort((a,b)=>a-b);
+    const rMed = radii[Math.floor(radii.length/2)];
+    const minR = Math.max(4, rMed*0.55);
+    const maxR = rMed*1.65;
+
+    const refined = runContourPass(gray, x0, y0, minR, maxR, 0.55);
+    return refined.length ? refined : loose;
   }catch(err){
     console.error(err);
     return [];
   }finally{
-    [src,roi,gray,thresh,kernel,contours,hierarchy,clahe,houghMat].forEach(m=>{ try{ m && m.delete && m.delete(); }catch(e){} });
+    [src,roi,gray,clahe].forEach(m=>{ try{ m && m.delete && m.delete(); }catch(e){} });
   }
 }
 
 $('undoBtn').onclick = () => { state.markers.pop(); redrawOverlay(); updatePipeCount(); };
 $('resetBtn').onclick = () => { state.markers = []; sctx.clearRect(0,0,shadeCanvas.width, shadeCanvas.height); clearFocusSpotlight(); redrawOverlay(); updatePipeCount(); };
-
-['sensSlider','minSlider','maxSlider','brushSlider'].forEach(id=>{
-  $(id).addEventListener('input', (e)=>{
-    const map = {sensSlider:'valSens', minSlider:'valMin', maxSlider:'valMax', brushSlider:'valBrush'};
-    $(map[id]).textContent = e.target.value;
-  });
-});
 
 /* --- OpenCV auto detect: scan seluruh foto sekaligus --- */
 function runAutoDetect(){
