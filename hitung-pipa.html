@@ -625,10 +625,10 @@ function updatePipeCount(){
   updateNextButton();
 }
 
-/* --- interaction: mark / kotak / arsir --- */
+/* --- interaction: mark / kotak / arsir(lasso) --- */
 let isDrawing = false;
 let boxStart = null, boxCurrent = null;
-let shadeStroke = null;
+let lassoPoints = null;
 
 function canvasPos(evt){
   const rect = overlayCanvas.getBoundingClientRect();
@@ -654,8 +654,8 @@ function handlePointerDown(evt){
     setFocusSpotlight({x0:p.x, y0:p.y, w:0, h:0});
   } else if(state.tool === 'shade'){
     isDrawing = true;
-    shadeStroke = {minX:p.x, minY:p.y, maxX:p.x, maxY:p.y};
-    drawShade(p);
+    lassoPoints = [p];
+    drawLassoPreview();
   }
 }
 
@@ -666,16 +666,13 @@ function handlePointerMove(evt){
     const x0=Math.min(boxStart.x,boxCurrent.x), y0=Math.min(boxStart.y,boxCurrent.y);
     const w=Math.abs(boxCurrent.x-boxStart.x), h=Math.abs(boxCurrent.y-boxStart.y);
     setFocusSpotlight({x0,y0,w,h});
-  } else if(state.tool === 'shade' && isDrawing){
+  } else if(state.tool === 'shade' && isDrawing && lassoPoints){
     evt.preventDefault();
     const p = canvasPos(evt);
-    drawShade(p);
-    const b = brushSize();
-    shadeStroke.minX = Math.min(shadeStroke.minX, p.x - b);
-    shadeStroke.minY = Math.min(shadeStroke.minY, p.y - b);
-    shadeStroke.maxX = Math.max(shadeStroke.maxX, p.x + b);
-    shadeStroke.maxY = Math.max(shadeStroke.maxY, p.y + b);
-    setFocusSpotlight({x0:shadeStroke.minX, y0:shadeStroke.minY, w:shadeStroke.maxX-shadeStroke.minX, h:shadeStroke.maxY-shadeStroke.minY});
+    // cuma tambah titik kalau jaraknya lumayan dari titik terakhir, biar path halus & ringan
+    const last = lassoPoints[lassoPoints.length-1];
+    if(Math.hypot(p.x-last.x, p.y-last.y) > 4) lassoPoints.push(p);
+    drawLassoPreview();
   }
 }
 
@@ -683,12 +680,11 @@ function handlePointerUp(){
   isDrawing = false;
   if(state.tool === 'box' && boxStart && boxCurrent){
     finalizeBoxDetect();
-  } else if(state.tool === 'shade' && shadeStroke){
-    finalizeShadeDetect();
+  } else if(state.tool === 'shade' && lassoPoints){
+    finalizeLassoDetect();
   }
 }
 
-function brushSize(){ return Math.max(14, Math.round(baseCanvas.width * 0.028)); }
 function defaultMarkerRadius(){
   if(state.markers.length){
     const radii = state.markers.map(m=>m.r).sort((a,b)=>a-b);
@@ -697,12 +693,23 @@ function defaultMarkerRadius(){
   return Math.max(14, Math.round(baseCanvas.width * 0.02));
 }
 
-function drawShade(p){
-  const brush = brushSize();
-  sctx.beginPath();
-  sctx.arc(p.x, p.y, brush, 0, Math.PI*2);
-  sctx.fillStyle = 'rgba(242,183,5,0.32)';
-  sctx.fill();
+/* Gambar preview garis yang lagi ditarik jari — otomatis nyambung balik
+   ke titik awal (closePath) dan keisi warna transparan, sesuai request. */
+function drawLassoPreview(){
+  dctx.clearRect(0,0,dimCanvas.width, dimCanvas.height);
+  if(!lassoPoints || lassoPoints.length < 2) return;
+  dctx.save();
+  dctx.beginPath();
+  dctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+  for(let i=1;i<lassoPoints.length;i++) dctx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
+  dctx.closePath(); // nyambungin otomatis balik ke titik pertama
+  dctx.fillStyle = 'rgba(242,183,5,0.22)';
+  dctx.fill();
+  dctx.strokeStyle = 'rgba(242,183,5,0.9)';
+  dctx.lineWidth = 2.2;
+  dctx.setLineDash([7,5]);
+  dctx.stroke();
+  dctx.restore();
 }
 
 function markersOutsideRect(x0,y0,w,h){
@@ -740,11 +747,39 @@ function finalizeBoxDetect(){
   if(cvReady()) runDetect(); else setTimeout(()=>{ cvReady() ? runDetect() : (clearFocusSpotlight(), toast('Modul deteksi belum siap, coba lagi.')); }, 900);
 }
 
-function finalizeShadeDetect(){
-  const s = shadeStroke; shadeStroke = null;
-  const x0=Math.max(0,s.minX), y0=Math.max(0,s.minY);
-  const w=Math.min(shadeCanvas.width,s.maxX)-x0, h=Math.min(shadeCanvas.height,s.maxY)-y0;
-  if(w<6 || h<6){ clearFocusSpotlight(); return; }
+/* Arsir sekarang bentuknya lasso: jejak titik yang ditarik jari ditutup
+   otomatis (garis lurus balik ke titik awal) dan diisi transparan permanen
+   di shadeCanvas. Deteksi cuma jalan buat pipa yang pusatnya beneran di
+   dalam bentuk yang digambar itu (bukan cuma sepanjang jalur kuas). */
+function finalizeLassoDetect(){
+  const points = lassoPoints; lassoPoints = null;
+  dctx.clearRect(0,0,dimCanvas.width, dimCanvas.height);
+  if(!points || points.length < 3){ return; }
+
+  let minX=points[0].x, minY=points[0].y, maxX=points[0].x, maxY=points[0].y;
+  points.forEach(p=>{
+    minX=Math.min(minX,p.x); minY=Math.min(minY,p.y);
+    maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y);
+  });
+  const pad = 6;
+  const x0=Math.max(0,minX-pad), y0=Math.max(0,minY-pad);
+  const w=Math.min(shadeCanvas.width,maxX+pad)-x0, h=Math.min(shadeCanvas.height,maxY+pad)-y0;
+  if(w<6 || h<6) return;
+
+  // gambar bentuk lasso permanen ke shadeCanvas — garis dari titik terakhir
+  // otomatis nyambung balik ke titik pertama (closePath)
+  sctx.save();
+  sctx.beginPath();
+  sctx.moveTo(points[0].x, points[0].y);
+  for(let i=1;i<points.length;i++) sctx.lineTo(points[i].x, points[i].y);
+  sctx.closePath();
+  sctx.fillStyle = 'rgba(242,183,5,0.32)';
+  sctx.fill();
+  sctx.strokeStyle = 'rgba(242,183,5,0.6)';
+  sctx.lineWidth = 1.5;
+  sctx.stroke();
+  sctx.restore();
+
   toast('Menghitung area arsiran…');
   const runDetect = () => {
     const isShaded = (x,y) => {
@@ -756,12 +791,11 @@ function finalizeShadeDetect(){
     state.markers = state.markers.filter(m => !isShaded(m.x, m.y));
     state.markers.push(...found);
     dedupeMarkers();
-    clearFocusSpotlight();
     redrawOverlay();
     updatePipeCount();
     toast(found.length ? `+${found.length} pipa (total ${state.markers.length})` : 'Tidak ada pipa terdeteksi, coba tandai manual');
   };
-  if(cvReady()) runDetect(); else setTimeout(()=>{ cvReady() ? runDetect() : (clearFocusSpotlight(), toast('Modul deteksi belum siap, coba lagi.')); }, 900);
+  if(cvReady()) runDetect(); else setTimeout(()=>{ cvReady() ? runDetect() : toast('Modul deteksi belum siap, coba lagi.'); }, 900);
 }
 
 ['mousedown','touchstart'].forEach(ev=> document.addEventListener(ev, (e)=>{
@@ -776,11 +810,11 @@ function finalizeShadeDetect(){
 const toolHints = {
   mark: 'Mode Tandai aktif — tap pipa buat tambah/hapus titik manual.',
   box: 'Mode Kotak aktif — tarik kotak di sekitar pipa, langsung kehitung otomatis.',
-  shade: 'Mode Arsir aktif — usap area pipa, langsung kehitung otomatis.'
+  shade: 'Mode Arsir aktif — gerakkan jari ngider area pipa, otomatis nyambung balik ke titik awal & keisi transparan, langsung kehitung.'
 };
 function setTool(name){
   state.tool = name;
-  boxStart = null; boxCurrent = null; shadeStroke = null; isDrawing = false;
+  boxStart = null; boxCurrent = null; lassoPoints = null; isDrawing = false;
   clearFocusSpotlight();
   document.querySelectorAll('#tool-mark,#tool-box,#tool-shade').forEach(el=>el.classList.remove('active'));
   $('tool-'+name).classList.add('active');
