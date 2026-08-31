@@ -805,7 +805,7 @@ function dedupeMarkers(){
 function dedupeCircleList(list){
   const kept = [];
   list.forEach(c=>{
-    const dup = kept.find(k => Math.hypot(k.x-c.x, k.y-c.y) < Math.max(k.r,c.r)*0.6);
+    const dup = kept.find(k => Math.hypot(k.x-c.x, k.y-c.y) < Math.max(k.r,c.r)*0.7);
     if(!dup) kept.push(c);
   });
   return kept;
@@ -821,9 +821,28 @@ function trimmedRadii(radii){
   const trimmed = s.slice(cut, s.length-cut);
   return trimmed.length ? trimmed : s;
 }
+/* Ukuran radius yang PALING SERING muncul (modus), bukan nilai tengah —
+   jauh lebih tahan gangguan dari banyak celah kecil antar pipa yang ikut
+   kedeteksi sebagai blob kecil (mereka nyebar di banyak ukuran beda-beda,
+   nggak numpuk di satu ukuran kayak lubang pipa asli). */
+function modeRadius(radii){
+  if(!radii.length) return null;
+  const bins = {};
+  radii.forEach(r=>{
+    const b = Math.round(r/2)*2;
+    bins[b] = (bins[b]||0) + 1;
+  });
+  let bestBin=null, bestCount=-1;
+  Object.keys(bins).forEach(b=>{
+    if(bins[b] > bestCount){ bestCount = bins[b]; bestBin = parseFloat(b); }
+  });
+  return bestBin;
+}
 
 /* Satu blob = satu kontur lubang pipa yang bentuknya bundar, difilter luas & kebundaran.
-   circMin: ambang kebundaran (1 = lingkaran sempurna). blockSize dari perkiraan radius. */
+   circMin: ambang kebundaran (1 = lingkaran sempurna, makin tinggi makin ketat).
+   Celah segitiga di antara 3 pipa yang nempel biasanya circularity-nya jauh
+   di bawah 0.6, jadi ambang ini yang jadi pembeda utama. */
 function runContourPass(gray, x0, y0, minR, maxR, circMin){
   const blockSize = Math.min(91, Math.max(15, (2*Math.round(minR*1.4))+1));
   let thresh,kernel,contours,hierarchy;
@@ -836,7 +855,7 @@ function runContourPass(gray, x0, y0, minR, maxR, circMin){
     contours = new cv.MatVector();
     hierarchy = new cv.Mat();
     cv.findContours(thresh, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-    const minArea = Math.PI * minR * minR * 0.3;
+    const minArea = Math.PI * minR * minR * 0.55;
     for(let i=0; i<contours.size(); i++){
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
@@ -846,7 +865,10 @@ function runContourPass(gray, x0, y0, minR, maxR, circMin){
       const circularity = (4 * Math.PI * area) / (peri * peri);
       const circle = cv.minEnclosingCircle(cnt);
       const r = circle.radius;
-      if(circularity >= circMin && r >= minR && r <= maxR){
+      // luas blob harus mendekati luas lingkaran penuhnya juga (bukan cuma bundar
+      // tapi kurus/kecil di dalam lingkaran pembungkus) — nyaring celah lebih ketat
+      const fillRatio = area / (Math.PI * r * r);
+      if(circularity >= circMin && fillRatio >= 0.62 && r >= minR && r <= maxR){
         results.push({x: circle.center.x + x0, y: circle.center.y + y0, r});
       }
       cnt.delete();
@@ -871,7 +893,7 @@ function runGlarePass(gray, x0, y0, minR, maxR, circMin){
     contours = new cv.MatVector();
     hierarchy = new cv.Mat();
     cv.findContours(bright, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-    const minArea = Math.PI * minR * minR * 0.25;
+    const minArea = Math.PI * minR * minR * 0.5;
     for(let i=0; i<contours.size(); i++){
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
@@ -881,7 +903,8 @@ function runGlarePass(gray, x0, y0, minR, maxR, circMin){
       const circularity = (4 * Math.PI * area) / (peri * peri);
       const circle = cv.minEnclosingCircle(cnt);
       const r = circle.radius;
-      if(circularity >= circMin && r >= minR && r <= maxR){
+      const fillRatio = area / (Math.PI * r * r);
+      if(circularity >= circMin && fillRatio >= 0.6 && r >= minR && r <= maxR){
         results.push({x: circle.center.x + x0, y: circle.center.y + y0, r});
       }
       cnt.delete();
@@ -919,18 +942,21 @@ function detectCirclesInRect(x0,y0,w,h){
     clahe = new cv.CLAHE(2.5, new cv.Size(8,8));
     clahe.apply(gray, gray);
 
-    const looseR = Math.max(20, Math.min(w,h)/2);
-    const looseDark = runContourPass(gray, x0, y0, 5, looseR, 0.45);
-    const looseGlare = runGlarePass(gray, x0, y0, 5, looseR, 0.4);
+    // lantai radius minimum ikut skala area yang dipilih, biar nggak nangkep
+    // titik-titik super kecil (celah antar pipa) sebagai kandidat awal
+    const minFloor = Math.max(8, Math.round(Math.min(w,h) * 0.045));
+    const looseR = Math.max(minFloor*2, Math.min(w,h)/2);
+    const looseDark = runContourPass(gray, x0, y0, minFloor, looseR, 0.55);
+    const looseGlare = runGlarePass(gray, x0, y0, minFloor, looseR, 0.5);
     const loose = clipToRect(dedupeCircleList([...looseDark, ...looseGlare]), x0, y0, w, h);
     if(loose.length < 3) return loose;
 
-    const rMed = median(trimmedRadii(loose.map(c=>c.r)));
-    const minR = Math.max(4, rMed*0.55);
-    const maxR = rMed*1.65;
+    const rMode = modeRadius(loose.map(c=>c.r)) || median(trimmedRadii(loose.map(c=>c.r)));
+    const minR = Math.max(minFloor, rMode*0.62);
+    const maxR = rMode*1.5;
 
-    const refinedDark = runContourPass(gray, x0, y0, minR, maxR, 0.55);
-    const refinedGlare = runGlarePass(gray, x0, y0, minR, maxR, 0.5);
+    const refinedDark = runContourPass(gray, x0, y0, minR, maxR, 0.6);
+    const refinedGlare = runGlarePass(gray, x0, y0, minR, maxR, 0.58);
     const refined = clipToRect(dedupeCircleList([...refinedDark, ...refinedGlare]), x0, y0, w, h);
     return refined.length ? refined : loose;
   }catch(err){
