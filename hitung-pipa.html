@@ -942,10 +942,11 @@ function detectCirclesInRect(x0,y0,w,h){
     clahe = new cv.CLAHE(2.5, new cv.Size(8,8));
     clahe.apply(gray, gray);
 
-    // lantai radius minimum ikut skala area yang dipilih, biar nggak nangkep
-    // titik-titik super kecil (celah antar pipa) sebagai kandidat awal
-    const minFloor = Math.max(8, Math.round(Math.min(w,h) * 0.045));
-    const looseR = Math.max(minFloor*2, Math.min(w,h)/2);
+    // lantai radius kecil & TETAP (bukan ikut ukuran area) — biar tetap bisa
+    // nangkep pipa yang kecil di layar (foto zoom-out / area pilihan lebar).
+    // yang nolak celah antar-pipa itu ambang kebundaran & fillRatio di bawah, bukan ini.
+    const minFloor = 5;
+    const looseR = Math.max(30, Math.min(w,h)/2);
     const looseDark = runContourPass(gray, x0, y0, minFloor, looseR, 0.55);
     const looseGlare = runGlarePass(gray, x0, y0, minFloor, looseR, 0.5);
     const loose = clipToRect(dedupeCircleList([...looseDark, ...looseGlare]), x0, y0, w, h);
