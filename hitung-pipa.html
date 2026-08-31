@@ -275,7 +275,7 @@
     <!-- SCREEN 3: HITUNG PIPA -->
     <section class="screen" id="screen-3">
       <h2 class="title">Hitung pipa</h2>
-      <p class="sub"><b>Kotak</b> = tarik kotak di area pipa, otomatis kehitung. <b>Arsir</b> = usap area pipa, otomatis kehitung. <b>Tandai</b> = tap pipa yang belum kehitung buat tambah manual, tap lagi buat hapus.</p>
+      <p class="sub"><b>Kotak/Arsir</b> = pilih area, otomatis kehitung — total di bawah itu <b>akumulasi</b> dari semua area yang udah kamu pilih. Area yang keliatan garis putus-putus biru berarti udah di-scan; lanjut ke bagian foto yang belum ada garis birunya. <b>Tandai</b> = tap buat tambah/hapus manual kalau ada yang kelewat.</p>
 
       <div id="pipeCaptureStage">
         <div class="capture-box" id="pipeCaptureBox">
@@ -709,6 +709,17 @@ function markersOutsideRect(x0,y0,w,h){
   return state.markers.filter(m => !(m.x>=x0 && m.x<=x0+w && m.y>=y0 && m.y<=y0+h));
 }
 
+function markRegionScanned(x0,y0,w,h){
+  sctx.save();
+  sctx.fillStyle = 'rgba(56,189,248,0.10)';
+  sctx.fillRect(x0,y0,w,h);
+  sctx.strokeStyle = 'rgba(56,189,248,0.55)';
+  sctx.lineWidth = 1.5;
+  sctx.setLineDash([5,4]);
+  sctx.strokeRect(x0,y0,w,h);
+  sctx.restore();
+}
+
 function finalizeBoxDetect(){
   const x0=Math.min(boxStart.x,boxCurrent.x), y0=Math.min(boxStart.y,boxCurrent.y);
   const w=Math.abs(boxCurrent.x-boxStart.x), h=Math.abs(boxCurrent.y-boxStart.y);
@@ -720,10 +731,11 @@ function finalizeBoxDetect(){
     const found = detectCirclesInRect(x0,y0,w,h);
     state.markers.push(...found);
     dedupeMarkers();
+    markRegionScanned(x0,y0,w,h);
     clearFocusSpotlight();
     redrawOverlay();
     updatePipeCount();
-    toast(found.length ? `+${found.length} pipa terdeteksi otomatis` : 'Tidak ada pipa terdeteksi, coba tandai manual');
+    toast(found.length ? `+${found.length} pipa (total ${state.markers.length}) — area biru = udah di-scan` : 'Tidak ada pipa terdeteksi, coba tandai manual');
   };
   if(cvReady()) runDetect(); else setTimeout(()=>{ cvReady() ? runDetect() : (clearFocusSpotlight(), toast('Modul deteksi belum siap, coba lagi.')); }, 900);
 }
@@ -747,7 +759,7 @@ function finalizeShadeDetect(){
     clearFocusSpotlight();
     redrawOverlay();
     updatePipeCount();
-    toast(found.length ? `+${found.length} pipa terdeteksi otomatis` : 'Tidak ada pipa terdeteksi, coba tandai manual');
+    toast(found.length ? `+${found.length} pipa (total ${state.markers.length})` : 'Tidak ada pipa terdeteksi, coba tandai manual');
   };
   if(cvReady()) runDetect(); else setTimeout(()=>{ cvReady() ? runDetect() : (clearFocusSpotlight(), toast('Modul deteksi belum siap, coba lagi.')); }, 900);
 }
@@ -884,6 +896,12 @@ function runGlarePass(gray, x0, y0, minR, maxR, circMin){
 /* Deteksi otomatis, kalibrasi sendiri — nggak butuh slider apa pun.
    Tahap 1: scan longgar (gelap + silau) buat nebak ukuran pipa yang khas di area ini.
    Tahap 2: scan ulang dengan radius yang udah disesuaikan ke ukuran itu. */
+function clipToRect(list, x0, y0, w, h){
+  // pengaman terakhir: buang paksa titik mana pun yang pusatnya jatuh
+  // di luar kotak/arsiran, apa pun penyebabnya di tahap sebelumnya.
+  return list.filter(c => c.x >= x0 && c.x <= x0+w && c.y >= y0 && c.y <= y0+h);
+}
+
 function detectCirclesInRect(x0,y0,w,h){
   if(!cvReady()) return [];
   x0 = Math.max(0, Math.round(x0)); y0 = Math.max(0, Math.round(y0));
@@ -904,7 +922,7 @@ function detectCirclesInRect(x0,y0,w,h){
     const looseR = Math.max(20, Math.min(w,h)/2);
     const looseDark = runContourPass(gray, x0, y0, 5, looseR, 0.45);
     const looseGlare = runGlarePass(gray, x0, y0, 5, looseR, 0.4);
-    const loose = dedupeCircleList([...looseDark, ...looseGlare]);
+    const loose = clipToRect(dedupeCircleList([...looseDark, ...looseGlare]), x0, y0, w, h);
     if(loose.length < 3) return loose;
 
     const rMed = median(trimmedRadii(loose.map(c=>c.r)));
@@ -913,7 +931,7 @@ function detectCirclesInRect(x0,y0,w,h){
 
     const refinedDark = runContourPass(gray, x0, y0, minR, maxR, 0.55);
     const refinedGlare = runGlarePass(gray, x0, y0, minR, maxR, 0.5);
-    const refined = dedupeCircleList([...refinedDark, ...refinedGlare]);
+    const refined = clipToRect(dedupeCircleList([...refinedDark, ...refinedGlare]), x0, y0, w, h);
     return refined.length ? refined : loose;
   }catch(err){
     console.error(err);
@@ -936,6 +954,7 @@ function runAutoDetect(){
   toast('Mendeteksi seluruh foto…');
   state.markers = detectCirclesInRect(0, 0, baseCanvas.width, baseCanvas.height);
   sctx.clearRect(0,0,shadeCanvas.width, shadeCanvas.height);
+  markRegionScanned(0, 0, baseCanvas.width, baseCanvas.height);
   redrawOverlay();
   updatePipeCount();
   toast(`Terdeteksi ${state.markers.length} pipa — cek & koreksi manual bila perlu`);
