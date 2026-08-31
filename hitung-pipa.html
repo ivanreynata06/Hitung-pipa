@@ -1000,7 +1000,11 @@ function detectCirclesInRect(x0,y0,w,h){
     ]);
     const refinedGlare = runGlarePass(gray, x0, y0, minR, maxR, 0.52);
     const refined = clipToRect(dedupeCircleList([...refinedDark, ...refinedGlare]), x0, y0, w, h);
-    return refined.length ? refined : loose;
+    // GABUNG dua tahap, jangan buang tahap 1 — di foto yang sudut kameranya
+    // miring, ukuran pipa yang jauh vs deket bisa beda jauh, jadi rentang radius
+    // hasil kalibrasi tahap 2 bisa kesempitan dan nge-skip pipa yang valid.
+    const merged = clipToRect(dedupeCircleList([...loose, ...refined]), x0, y0, w, h);
+    return merged;
   }catch(err){
     console.error(err);
     return [];
